@@ -108,7 +108,7 @@ const decodeObjectBinary = (bytes, type, isLengthPrefixed, messageFactory) => {
   const keys = Object.keys(type);
   keys.forEach((key, index) => {
     if (key === "msgType") return;
-    if (key === "sequence") return;
+    // if (key === "sequence") return;
     if (is.array(type[key])) {
       const { offset, val } = decodeArrayBinary(
         bytes,
@@ -129,11 +129,11 @@ const decodeObjectBinary = (bytes, type, isLengthPrefixed, messageFactory) => {
       //if this field is default value, continue
       if (index + 1 < fieldNum || fieldNum < 0) return;
 
-      if (fieldNum <= lastFieldNum) {
-        throw new Error(
-          `encountered fieldNum: ${fieldNum}, but we have already seen fnum: ${lastFieldNum}`
-        );
-      }
+      // if (fieldNum <= lastFieldNum) {
+      //   throw new Error(
+      //     `encountered fieldNum: ${fieldNum}, but we have already seen fnum: ${lastFieldNum}`
+      //   );
+      // }
 
       lastFieldNum = fieldNum;
 
