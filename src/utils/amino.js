@@ -1,213 +1,225 @@
+const encodings = require("protocol-buffers-encodings");
+const Buffer = require("safe-buffer").Buffer;
+const is = require("is_js");
 
-const encodings = require('protocol-buffers-encodings')
-const Buffer = require("safe-buffer").Buffer
-const is  = require("is_js")
+const varString = encodings.string;
+const varBool = encodings.bool;
+const varBytes = encodings.bytes;
+const varint = encodings.varint;
 
-const varString = encodings.string
-const varBool = encodings.bool
-const varBytes = encodings.bytes
-const varint = encodings.varint
-   
 const decoder = (bytes, varType) => {
-const val = varType.decode(bytes, 0)
-const offset = varType.encodingLength(val)
-return { val, offset }
-}
+  const val = varType.decode(bytes, 0);
+  const offset = varType.encodingLength(val);
+  return { val, offset };
+};
 
-module.exports=function unMarshalBinaryLengthPrefixed (bytes, type, messageFactory){
-  if(bytes.length === 0)
-    throw new TypeError("Cannot decode empty bytes")
+module.exports = function unMarshalBinaryLengthPrefixed(
+  bytes,
+  type,
+  messageFactory
+) {
+  if (bytes.length === 0) throw new TypeError("Cannot decode empty bytes");
 
   // read byte-length prefix
-  const{ offset: len } = decoder(bytes, varint)
+  const { offset: len } = decoder(bytes, varint);
 
-  if(len < 0)
-    throw new Error(`Error reading msg byte-length prefix: got code ${len}`)
-  
-  bytes = bytes.slice(len)
+  if (len < 0)
+    throw new Error(`Error reading msg byte-length prefix: got code ${len}`);
 
-  return unMarshalBinaryBare(bytes, type, messageFactory)
-}
+  bytes = bytes.slice(len);
+
+  return unMarshalBinaryBare(bytes, type, messageFactory);
+};
 
 /**
  * js amino UnmarshalBinaryLengthPrefixed
  * @param {Buffer} bytes
  * @param {Object} type
- * @returns {Object} 
+ * @returns {Object}
  *  */
-function unMarshalBinaryBare(bytes, type, messageFactory){
-  if(!is.object(type)) 
-    throw new TypeError("type should be object")
-  
-  if(!Buffer.isBuffer(bytes))
-    throw new TypeError("bytes must be buffer")
+function unMarshalBinaryBare(bytes, type, messageFactory) {
+  if (!is.object(type)) throw new TypeError("type should be object");
 
-  if(is.array(type)) {
-    if(!is.object(type[0]))
-      throw new TypeError("type should be object")
-  
-    return decodeArrayBinary(bytes, type[0], type.length, messageFactory)
+  if (!Buffer.isBuffer(bytes)) throw new TypeError("bytes must be buffer");
+
+  if (is.array(type)) {
+    if (!is.object(type[0])) throw new TypeError("type should be object");
+
+    return decodeArrayBinary(bytes, type[0], type.length, messageFactory);
   }
-  
-  return decodeBinary(bytes, type, false, messageFactory)
+
+  return decodeBinary(bytes, type, false, messageFactory);
 }
 
 const decodeBinary = (bytes, type, isLengthPrefixed, messageFactory) => {
-  if(Buffer.isBuffer(type)) {
-    return decoder(bytes, varBytes)
+  if (Buffer.isBuffer(type)) {
+    return decoder(bytes, varBytes);
   }
 
-  if(is.array(type)) {
-    return decodeArrayBinary(bytes, type, type.length, messageFactory)
+  if (is.array(type)) {
+    return decodeArrayBinary(bytes, type, type.length, messageFactory);
   }
 
-  if(is.number(type)) {
-    return decoder(bytes, varint)
+  if (is.number(type)) {
+    return decoder(bytes, varint);
   }
 
-  if(is.boolean(type)) {
-    return decoder(bytes, varBool)
+  if (is.boolean(type)) {
+    return decoder(bytes, varBool);
   }
 
-  if(is.string(type)) {
-    return decoder(bytes, varString)
+  if (is.string(type)) {
+    return decoder(bytes, varString);
   }
 
-  if(is.object(type)) {
-    return decodeObjectBinary(bytes, type, isLengthPrefixed, messageFactory)
+  if (is.object(type)) {
+    return decodeObjectBinary(bytes, type, isLengthPrefixed, messageFactory);
   }
 
-  return
-}
+  return;
+};
 
 const decodeObjectBinary = (bytes, type, isLengthPrefixed, messageFactory) => {
-  let objectOffset = 0
+  let objectOffset = 0;
 
   // read byte-length prefix
-  if(isLengthPrefixed){
-    const{ offset: len } = decoder(bytes, varint)
-    bytes = bytes.slice(len)
-    objectOffset += len
+  if (isLengthPrefixed) {
+    const { offset: len } = decoder(bytes, varint);
+    bytes = bytes.slice(len);
+    objectOffset += len;
   }
 
   // If registered concrete, consume and verify prefix bytes.
-  if(type.msgType) {
+  if (type.msgType) {
     const actualMsgType = bytes.slice(0, 4);
-    if (type.msgType === 'AUTO' && messageFactory) { // Automatically set the type of message
-      const newType = messageFactory(actualMsgType.toString('hex'));
+    if (type.msgType === "AUTO" && messageFactory) {
+      // Automatically set the type of message
+      const newType = messageFactory(actualMsgType.toString("hex"));
       if (!newType) {
-        console.warn('Unrecognized message type', actualMsgType);
+        console.warn("Unrecognized message type", actualMsgType);
       }
       type = newType || type;
     }
-    bytes = bytes.slice(4)
-    objectOffset += 4
+    bytes = bytes.slice(4);
+    objectOffset += 4;
   }
 
-  let lastFieldNum = 0
-  const keys = Object.keys(type)
+  let lastFieldNum = 0;
+  const keys = Object.keys(type);
   keys.forEach((key, index) => {
-    if (key === "msgType") return
+    if (key === "msgType") return;
+    if (key === "sequence") return;
     if (is.array(type[key])) {
-      const { offset, val } = decodeArrayBinary(bytes, type[key][0], type[key].length, messageFactory)
-      objectOffset += offset
-      type[key] = val
-      bytes = bytes.slice(offset)
+      const { offset, val } = decodeArrayBinary(
+        bytes,
+        type[key][0],
+        type[key].length,
+        messageFactory
+      );
+      objectOffset += offset;
+      type[key] = val;
+      bytes = bytes.slice(offset);
     } else {
-      const { fieldNum, typ, offset: fieldNumLen } = decodeFieldNumberAndTyp3(bytes)
+      const {
+        fieldNum,
+        typ,
+        offset: fieldNumLen,
+      } = decodeFieldNumberAndTyp3(bytes);
 
       //if this field is default value, continue
-      if(index+1 < fieldNum || fieldNum < 0) return
+      if (index + 1 < fieldNum || fieldNum < 0) return;
 
-      if(fieldNum <= lastFieldNum) {
-        throw new Error(`encountered fieldNum: ${fieldNum}, but we have already seen fnum: ${lastFieldNum}`)
+      if (fieldNum <= lastFieldNum) {
+        throw new Error(
+          `encountered fieldNum: ${fieldNum}, but we have already seen fnum: ${lastFieldNum}`
+        );
       }
 
-      lastFieldNum = fieldNum
+      lastFieldNum = fieldNum;
 
-      if(index+1 !== fieldNum) {
-        throw new Error("field number is not expected")
+      if (index + 1 !== fieldNum) {
+        throw new Error("field number is not expected");
       }
 
-      const typeWanted = typeToTyp3(type[key])
-      
-      if(typ !== typeWanted) {
-        throw new Error("field type is not expected")
+      const typeWanted = typeToTyp3(type[key]);
+
+      if (typ !== typeWanted) {
+        throw new Error("field type is not expected");
       }
 
       //remove 1 byte of type
-      bytes = bytes.slice(fieldNumLen)
+      bytes = bytes.slice(fieldNumLen);
 
-      const { val, offset } = decodeBinary(bytes, type[key], true)
-      type[key] = val
+      const { val, offset } = decodeBinary(bytes, type[key], true);
+      type[key] = val;
 
       //remove decoded bytes
-      bytes = bytes.slice(offset)
-      objectOffset += offset + 1
+      bytes = bytes.slice(offset);
+      objectOffset += offset + 1;
     }
-  })
+  });
 
-  return { val: type, offset: objectOffset }
-}
+  return { val: type, offset: objectOffset };
+};
 
 const decodeArrayBinary = (bytes, type, len, messageFactory) => {
-  const arr = []
-  let arrayOffset = 0
-  let { fieldNum: fieldNumber } = decodeFieldNumberAndTyp3(bytes)
+  const arr = [];
+  let arrayOffset = 0;
+  let { fieldNum: fieldNumber } = decodeFieldNumberAndTyp3(bytes);
 
-  for(let i=0; i<len; i++){
-    const { fieldNum, offset: fieldNumLen } = decodeFieldNumberAndTyp3(bytes)
+  for (let i = 0; i < len; i++) {
+    const { fieldNum, offset: fieldNumLen } = decodeFieldNumberAndTyp3(bytes);
 
-    if(fieldNum !== fieldNumber || fieldNum < 0) break
-    
+    if (fieldNum !== fieldNumber || fieldNum < 0) break;
+
     //remove 1 byte of encoded field number and type
-    bytes = bytes.slice(fieldNumLen)
+    bytes = bytes.slice(fieldNumLen);
 
     //is default value, skip and continue read bytes
-    if(bytes.length > 0 && bytes[0] === 0x00) continue
+    if (bytes.length > 0 && bytes[0] === 0x00) continue;
 
-    const { offset, val } = decodeBinary(bytes, type, true, messageFactory)
+    const { offset, val } = decodeBinary(bytes, type, true, messageFactory);
 
-    arr.push({...val})
-    bytes = bytes.slice(offset)
+    arr.push({ ...val });
+    bytes = bytes.slice(offset);
 
     //add 1 byte of type
-    arrayOffset += offset + fieldNumLen
-    fieldNumber = fieldNum
+    arrayOffset += offset + fieldNumLen;
+    fieldNumber = fieldNum;
   }
-  
+
   // console.log(arr)
-  return { val: arr, offset: arrayOffset }
-}
+  return { val: arr, offset: arrayOffset };
+};
 
 const decodeFieldNumberAndTyp3 = (bytes) => {
-  if(bytes.length < 2) {
+  if (bytes.length < 2) {
     //default value
-    return { fieldNum: -1 }
+    return { fieldNum: -1 };
   }
-  const { val, offset } = decoder(bytes, varint)
-  const typ = val & 7
-  let fieldNum = val >> 3
-  if(fieldNum > (1<<29 -1)) {
-    throw new Error(`invalid field num ${fieldNum}`)
+  const { val, offset } = decoder(bytes, varint);
+  const typ = val & 7;
+  let fieldNum = val >> 3;
+  if (fieldNum > 1 << (29 - 1)) {
+    throw new Error(`invalid field num ${fieldNum}`);
   }
-  return { fieldNum, typ, offset }
-}
+  return { fieldNum, typ, offset };
+};
 
-const typeToTyp3 = type => {
-  if(is.boolean(type)){
-    return 0
+const typeToTyp3 = (type) => {
+  if (is.boolean(type)) {
+    return 0;
   }
 
-  if(is.number(type)){
-    if(is.integer(type)){
-      return 0
-    }else{
-      return 1
+  if (is.number(type)) {
+    if (is.integer(type)) {
+      return 0;
+    } else {
+      return 1;
     }
   }
 
-  if(is.string(type) || is.array(type) || is.object(type)){
-    return 2
+  if (is.string(type) || is.array(type) || is.object(type)) {
+    return 2;
   }
-}
+};
