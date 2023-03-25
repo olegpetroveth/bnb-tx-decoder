@@ -38,7 +38,7 @@ module.exports = function unMarshalBinaryLengthPrefixed(
  * @param {Object} type
  * @returns {Object}
  *  */
-function unMarshalBinaryBare(bytes, type, messageFactory) {
+function unMarshalBinaryBare(bytes, type, messageFactory, alternate) {
   if (!is.object(type)) throw new TypeError("type should be object");
 
   if (!Buffer.isBuffer(bytes)) throw new TypeError("bytes must be buffer");
@@ -46,13 +46,25 @@ function unMarshalBinaryBare(bytes, type, messageFactory) {
   if (is.array(type)) {
     if (!is.object(type[0])) throw new TypeError("type should be object");
 
-    return decodeArrayBinary(bytes, type[0], type.length, messageFactory);
+    return decodeArrayBinary(
+      bytes,
+      type[0],
+      type.length,
+      messageFactory,
+      alternate
+    );
   }
 
-  return decodeBinary(bytes, type, false, messageFactory);
+  return decodeBinary(bytes, type, false, messageFactory, alternate);
 }
 
-const decodeBinary = (bytes, type, isLengthPrefixed, messageFactory) => {
+const decodeBinary = (
+  bytes,
+  type,
+  isLengthPrefixed,
+  messageFactory,
+  alternate
+) => {
   if (Buffer.isBuffer(type)) {
     return decoder(bytes, varBytes);
   }
@@ -75,21 +87,34 @@ const decodeBinary = (bytes, type, isLengthPrefixed, messageFactory) => {
 
   if (is.object(type)) {
     // alternate method that doesn't throw error on certain fields
-    if (alternate) {
+    if (alternate === true) {
       return decodeObjectBinaryAlternate(
         bytes,
         type,
         isLengthPrefixed,
-        messageFactory
+        messageFactory,
+        alternate
       );
     }
-    return decodeObjectBinary(bytes, type, isLengthPrefixed, messageFactory);
+    return decodeObjectBinary(
+      bytes,
+      type,
+      isLengthPrefixed,
+      messageFactory,
+      alternate
+    );
   }
 
   return;
 };
 
-const decodeObjectBinary = (bytes, type, isLengthPrefixed, messageFactory) => {
+const decodeObjectBinary = (
+  bytes,
+  type,
+  isLengthPrefixed,
+  messageFactory,
+  alternate
+) => {
   let objectOffset = 0;
 
   // read byte-length prefix
@@ -123,7 +148,8 @@ const decodeObjectBinary = (bytes, type, isLengthPrefixed, messageFactory) => {
         bytes,
         type[key][0],
         type[key].length,
-        messageFactory
+        messageFactory,
+        alternate
       );
       objectOffset += offset;
       type[key] = val;
@@ -159,7 +185,7 @@ const decodeObjectBinary = (bytes, type, isLengthPrefixed, messageFactory) => {
       //remove 1 byte of type
       bytes = bytes.slice(fieldNumLen);
 
-      const { val, offset } = decodeBinary(bytes, type[key], true);
+      const { val, offset } = decodeBinary(bytes, type[key], true, alternate);
       type[key] = val;
 
       //remove decoded bytes
@@ -175,7 +201,8 @@ const decodeObjectBinaryAlternate = (
   bytes,
   type,
   isLengthPrefixed,
-  messageFactory
+  messageFactory,
+  alternate
 ) => {
   let objectOffset = 0;
 
@@ -211,7 +238,8 @@ const decodeObjectBinaryAlternate = (
         bytes,
         type[key][0],
         type[key].length,
-        messageFactory
+        messageFactory,
+        alternate
       );
       objectOffset += offset;
       type[key] = val;
@@ -247,7 +275,7 @@ const decodeObjectBinaryAlternate = (
       //remove 1 byte of type
       bytes = bytes.slice(fieldNumLen);
 
-      const { val, offset } = decodeBinary(bytes, type[key], true);
+      const { val, offset } = decodeBinary(bytes, type[key], true, alternate);
       type[key] = val;
 
       //remove decoded bytes
@@ -259,7 +287,7 @@ const decodeObjectBinaryAlternate = (
   return { val: type, offset: objectOffset };
 };
 
-const decodeArrayBinary = (bytes, type, len, messageFactory) => {
+const decodeArrayBinary = (bytes, type, len, messageFactory, alternate) => {
   const arr = [];
   let arrayOffset = 0;
   let { fieldNum: fieldNumber } = decodeFieldNumberAndTyp3(bytes);
@@ -275,7 +303,13 @@ const decodeArrayBinary = (bytes, type, len, messageFactory) => {
     //is default value, skip and continue read bytes
     if (bytes.length > 0 && bytes[0] === 0x00) continue;
 
-    const { offset, val } = decodeBinary(bytes, type, true, messageFactory);
+    const { offset, val } = decodeBinary(
+      bytes,
+      type,
+      true,
+      messageFactory,
+      alternate
+    );
 
     arr.push({ ...val });
     bytes = bytes.slice(offset);
