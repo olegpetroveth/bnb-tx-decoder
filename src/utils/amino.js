@@ -16,7 +16,8 @@ const decoder = (bytes, varType) => {
 module.exports = function unMarshalBinaryLengthPrefixed(
   bytes,
   type,
-  messageFactory
+  messageFactory,
+  alternate = false
 ) {
   if (bytes.length === 0) throw new TypeError("Cannot decode empty bytes");
 
@@ -28,7 +29,7 @@ module.exports = function unMarshalBinaryLengthPrefixed(
 
   bytes = bytes.slice(len);
 
-  return unMarshalBinaryBare(bytes, type, messageFactory);
+  return unMarshalBinaryBare(bytes, type, messageFactory, alternate);
 };
 
 /**
@@ -73,6 +74,15 @@ const decodeBinary = (bytes, type, isLengthPrefixed, messageFactory) => {
   }
 
   if (is.object(type)) {
+    // alternate method that doesn't throw error on certain fields
+    if (alternate) {
+      return decodeObjectBinaryAlternate(
+        bytes,
+        type,
+        isLengthPrefixed,
+        messageFactory
+      );
+    }
     return decodeObjectBinary(bytes, type, isLengthPrefixed, messageFactory);
   }
 
@@ -108,7 +118,93 @@ const decodeObjectBinary = (bytes, type, isLengthPrefixed, messageFactory) => {
   const keys = Object.keys(type);
   keys.forEach((key, index) => {
     if (key === "msgType") return;
-    // if (key === "sequence") return;
+    if (is.array(type[key])) {
+      const { offset, val } = decodeArrayBinary(
+        bytes,
+        type[key][0],
+        type[key].length,
+        messageFactory
+      );
+      objectOffset += offset;
+      type[key] = val;
+      bytes = bytes.slice(offset);
+    } else {
+      const {
+        fieldNum,
+        typ,
+        offset: fieldNumLen,
+      } = decodeFieldNumberAndTyp3(bytes);
+
+      //if this field is default value, continue
+      if (index + 1 < fieldNum || fieldNum < 0) return;
+
+      if (fieldNum <= lastFieldNum) {
+        throw new Error(
+          `encountered fieldNum: ${fieldNum}, but we have already seen fnum: ${lastFieldNum}`
+        );
+      }
+
+      lastFieldNum = fieldNum;
+
+      if (index + 1 !== fieldNum) {
+        throw new Error("field number is not expected");
+      }
+
+      const typeWanted = typeToTyp3(type[key]);
+
+      if (typ !== typeWanted) {
+        throw new Error("field type is not expected");
+      }
+
+      //remove 1 byte of type
+      bytes = bytes.slice(fieldNumLen);
+
+      const { val, offset } = decodeBinary(bytes, type[key], true);
+      type[key] = val;
+
+      //remove decoded bytes
+      bytes = bytes.slice(offset);
+      objectOffset += offset + 1;
+    }
+  });
+
+  return { val: type, offset: objectOffset };
+};
+
+const decodeObjectBinaryAlternate = (
+  bytes,
+  type,
+  isLengthPrefixed,
+  messageFactory
+) => {
+  let objectOffset = 0;
+
+  // read byte-length prefix
+  if (isLengthPrefixed) {
+    const { offset: len } = decoder(bytes, varint);
+    bytes = bytes.slice(len);
+    objectOffset += len;
+  }
+
+  // If registered concrete, consume and verify prefix bytes.
+  if (type.msgType) {
+    const actualMsgType = bytes.slice(0, 4);
+    if (type.msgType === "AUTO" && messageFactory) {
+      // Automatically set the type of message
+      const newType = messageFactory(actualMsgType.toString("hex"));
+      if (!newType) {
+        console.warn("Unrecognized message type", actualMsgType);
+      }
+      type = newType || type;
+    }
+    bytes = bytes.slice(4);
+    objectOffset += 4;
+  }
+
+  let lastFieldNum = 0;
+  const keys = Object.keys(type);
+  keys.forEach((key, index) => {
+    if (key === "msgType") return;
     if (is.array(type[key])) {
       const { offset, val } = decodeArrayBinary(
         bytes,
