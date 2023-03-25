@@ -205,6 +205,7 @@ const decodeObjectBinaryAlternate = (
   const keys = Object.keys(type);
   keys.forEach((key, index) => {
     if (key === "msgType") return;
+    if (key === "sequence") return;
     if (is.array(type[key])) {
       const { offset, val } = decodeArrayBinary(
         bytes,
